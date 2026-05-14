@@ -257,6 +257,13 @@ ffmpeg -y -f concat -safe 0 -i list.txt -c copy S01ENN_标题_完整版.mp4
 | `/lint --fix-manifest` | 回填缺失的 manifest.md |
 | `/lint --fix-orphan` | 列出孤儿资产 |
 | `/lint --regen` | 列出所有 needs_regen=true 的故事板 + 批量重生（需用户确认）|
+| **动态资产（§八·X）** | |
+| `/盘点` | 全 wiki grep 找 dangling refs，列建议建卡的实体 |
+| `/盘点 第N集` | 只盘点某集 |
+| `/盘点 --backfill` | 显式触发跨集追溯回填 |
+| `/补卡 X` | 引导用户补全 X 的字段（stub → partial → complete） |
+| `/卡片状态` | 列出所有卡片按 status 分组 |
+| `/重置 X` | 把 X 的 status 降回 stub（用于大改后重做） |
 | **修改类（§十三.2）** | |
 | `/执行` | 触发当前所有累积草案的批量影响分析 + 执行 |
 | `/清空草案` | 清空 `_pending_changes.md`，所有未执行草案丢弃 |
@@ -771,6 +778,26 @@ fork 后的新版本 frontmatter 标 `forked_from: {真正的源}`，不一定�
 读取 [storyboard-spec.md](references/storyboard-spec.md) 和 [storyboard-prompts.md](references/storyboard-prompts.md) 获取完整规范。
 
 ### 生成流程（每个 beat）
+
+**Step 0: Stub 卡片检查（§八·X.6）**
+
+在 Step 1 之前，先确认所有用到的资产是否为 stub：
+1. 读 beat 涉及的角色 + 场景 + 道具
+2. 查每个资产卡的 `status` 字段
+3. 如有 stub 卡 → 提示用户：
+   ```
+   ⚠️ 本 beat 需要的以下资产是 stub：
+   - 角色 X (外貌 TODO)
+   - 场景 Y (无细节)
+   
+   [A] 先补全（推荐）
+   [B] LLM 即兴生成
+   [C] 用 stub 信息 + 默认风格直接出图，后续可迭代
+   ```
+4. 用户选 C → 用现有 stub 字段构建 fallback 提示词
+5. 用户选 A → 触发 `/补卡 X` 流程，完成后回来继续 Step 1
+
+**不阻塞**：用户始终可以选 C 推进，stub 卡的限制是"质量可能偏离"，不是"无法生成"。
 
 **Step 1: 提取要素 + 影视技巧匹配**
 
@@ -1337,6 +1364,131 @@ Wiki 根目录的 `log.md` 是一个 **append-only**（追加式）操作日志�
 
 ---
 
+## 八·X、动态资产增补（写作中自动增补 Wiki）
+
+> 现实创作中 Wiki 不是一次建完——写到第 N 集突然冒出新角色/新场景/新道具是常态。
+> 此机制保证 agent 在写作时**自动检测并增补 Wiki**，不让资产管理拖累创作节奏。
+> 完整规则见 [asset-detection.md](references/asset-detection.md) 与 [asset-card-template.md](references/asset-card-template.md)。
+
+### X.1 三种触发模式
+
+| 模式 | 时机 | 行为 |
+|------|------|------|
+| **主动检测** | 每次写完一集剧本 / 解析完一段素材 | agent 写完顺便扫新实体，自动建 stub + 通知用户 |
+| **批量盘点** | 用户说 "盘点" / `/盘点` | 全 wiki grep 专有名词 vs index，列 dangling refs |
+| **被动 lint** | `/lint` 定期跑 | 列 dangling references + 按 status 分组 |
+
+### X.2 检测算法（伪代码）
+
+```
+For each new text (剧本/素材):
+  entities = LLM_extract_named_entities(text)
+  for e in entities:
+    if e not in index.md:
+      if e.mention_count >= 2 OR e.is_key_scene/key_prop:
+        type = classify(e)  # 角色 / 场景 / 道具
+        create_stub_card(type, e)
+        append_to_index(e)
+        notify_user(e)
+```
+
+详细阈值判断见 [asset-detection.md §阈值判断](references/asset-detection.md)。
+
+### X.3 自动建卡（推荐配置 — 默认行为）
+
+agent 写完剧本后自检流程：
+
+1. 提取新实体（命名 + 出现 ≥ 2 次，或 1 次但情节关键）
+2. 用 [asset-card-template.md](references/asset-card-template.md) 的 **stub 模板**批量建卡
+3. 同步 `index.md`（追加新条目 + 标 `(stub)`）
+4. 写 log.md：`[asset-detect] 第 N 集检测新增 X 角色 + Y 场景 + Z 道具`
+5. 通知用户（不阻塞）：
+
+```
+✅ 第 21 集剧本已写完（1240 字）
+
+📌 检测到 3 个新资产（已自动建 stub 卡）：
+   - 👤 角色：露西·陈（出现 2 次，副警长助理）→ stub
+   - 🏛️ 场景：废弃图书馆（整集核心）→ stub
+   - 📦 道具：古老药剂瓶（情节核心）→ stub
+   
+要现在补全详情吗？
+[A] 补全（agent 引导填字段 → 出参考图）
+[B] 先放着（status 保持 stub）
+[C] 撤销建卡（说明：哪个不需要建？）
+```
+
+### X.4 跨集追溯（推荐配置）
+
+新增资产时 agent **回查前面集数**，找泛指可能就是新资产的句子：
+
+```
+agent: 你刚加了"露西·陈"（副警长助理）。
+       前面集数有 2 处泛指可能是她：
+       - 第 17 集 P04："副警长助理快进来一下"
+       - 第 19 集 P02："助理把档案放在桌上"
+       
+       要不要回填？这会让前后连贯。
+       [A] 全部回填  [B] 部分回填  [C] 不改
+```
+
+回填走 §十三.2 修改类草案流程（影响分析 → 用户审批 → 多文件 Edit）。
+
+### X.5 卡片状态字段（status）
+
+每张卡 frontmatter 含 status：
+
+| status | 含义 |
+|--------|------|
+| `stub` | 仅命名 + 出场记录，其他 TODO |
+| `partial` | 关键字段（如外貌+性格）已填 |
+| `complete` | 所有字段完成 |
+| `with-image` | 有参考图（可与 partial/complete 叠加）|
+
+升级规则见 [asset-card-template.md §升级机制](references/asset-card-template.md)。
+
+### X.6 Stub 不阻塞，但**生成视觉资产时提示**
+
+故事板/视频生成前，agent 检测到目标 beat 用到 stub 卡：
+
+```
+⚠️ 第 21 集 P03 需要：
+   - 露西·陈 (stub，外貌 TODO)
+   - 废弃图书馆 (stub，无场景细节)
+
+[A] 我先帮你补一下（5 分钟）  
+[B] 直接 LLM 即兴生成（可能偏离风格）
+[C] 用现有 stub 信息 + 默认风格出图，后续可迭代（推荐）
+```
+
+详细见 §六 故事板生成的 stub 处理步骤。
+
+### X.7 命令
+
+| 命令 | 功能 |
+|------|------|
+| `/盘点` | 全 wiki grep 找 dangling refs，列建议建卡的实体 |
+| `/盘点 第N集` | 只盘点某集 |
+| `/盘点 --backfill` | 显式触发跨集追溯回填 |
+| `/补卡 X` | 引导用户补全 X 的字段（stub → partial → complete） |
+| `/卡片状态` | 列出所有卡片按 status 分组 |
+| `/重置 X` | 把 X 的 status 降回 stub（用于大改后重做） |
+
+### X.8 偏好配置
+
+阈值参数存在 `preferences.md`：
+
+```markdown
+## 资产检测偏好
+- 自动建卡阈值：出现次数 >= 2（默认）
+- 跨集追溯：开启（默认）
+- Stub 卡出图前提醒：开启（默认）
+```
+
+用户可调，例如严格模式："出现 1 次就建卡"。
+
+---
+
 ## 九、角色/场景参考图生成
 
 ### 触发方式
@@ -1391,6 +1543,8 @@ Cinematic establishing shot of [地点英文描述], [建筑风格], [天气/时
 | **资产改动反查** | 资产文件（角色卡、场景卡、参考图）的 mtime 比依赖它的故事板更新 → 提示重新生成 | grep 所有 manifest.md 的 depends_on 字段，对比 mtime |
 | **Needs-regen 队列** | 已被 change-session 标 `needs_regen: true` 的故事板，列表 + 估算批量重生成本 | grep manifest.md 中 `needs_regen: true` |
 | **草案残留** | `_pending_changes.md` 存在但已超过 24 小时未执行 → 提示用户是否清理 | 检查文件 mtime |
+| **Dangling references** | 剧本中提到但 wiki 中无卡片的实体 | 全 wiki grep 命名实体 vs index.md |
+| **Stub 卡片分组** | 按 status 分组列出所有卡片（stub/partial/complete/with-image），提示哪些可推进 | grep frontmatter `status` 字段 |
 | **POV 泄漏检测** | `03_视角/第N集_观众已知.md` 中不应包含该集观众不可能知道的信息 | 对比 02_故事/世界观.md 中的上帝视角信息 |
 | **时间线一致性** | `02_故事/完整时间线.md` 中的事件顺序与各集剧本描述一致 | 遍历剧本中的时间描述 |
 | **角色一致性** | `01_资产/01_角色/` 中的外貌/性格描述与剧本描写一致 | 提取剧本中的角色描写关键词，对比角色卡 |
@@ -1519,6 +1673,11 @@ Cinematic establishing shot of [地点英文描述], [建筑风格], [天气/时
 | "回到 v1.0 看看 / 切回原版" | `/切换版本 v1.0`（自动管理 frozen）|
 | "v1.0 和现在比有啥不同" | `/对比 v1.0 vs current`（只读） |
 | "这是 v1.0 的，能改吗" | **拒绝** + 提示 frozen 规则（§五·F.1）|
+| "盘点 / 看看哪些资产没建卡 / 哪些遗漏了" | `/盘点` 全 wiki 扫 dangling refs |
+| "补全 X / X 的卡补一下 / 把 X 完善" | `/补卡 X` 引导填字段 |
+| "X 是个新角色/场景/道具" | 立即建 stub 卡（不需要等"出现 2 次"阈值）|
+| "把刚才那个新角色叫 X" | 用 X 创建 stub，把最近未命名提及关联上去 |
+| "哪些是 stub / 多少卡没建完" | `/卡片状态` 按 status 分组报告 |
 | "第N集的故事板继续 / 接下来做第N集" | 找出第N集状态，生未完成的故事板 |
 | "把刚才那张存到第N集 P{beat}" | 沙盒提升流程（§十三.1） |
 
