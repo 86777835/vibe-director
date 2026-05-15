@@ -181,6 +181,71 @@ aliases: [Leah Scott]
 
 ---
 
+### References 必读对照表（核心质量保障）
+
+**Agent 在执行任何生成动作前，必须先 Read 对应的 references 文件，对照模板生成。不可凭印象。**
+
+#### 何时读哪个
+
+| 你要做的事 | **必读** references | 何时读 |
+|----------|------------------|------|
+| 写/补全角色卡 | `references/character-dev.md`（角色信息表 13 字段 + 弧线 + Mermaid 关系图） | **每次** 写角色卡前 |
+| 写场景卡 | `references/wiki-structure.md`（场景卡格式） | 每次 |
+| 写文学剧本 | `references/script-format.md` + `references/episode-writing.md` + `references/rhythm-design.md` | **每集** 开写前 |
+| 写创作剧本（分镜）| `references/storyboard-spec.md` + `references/cinematic-techniques.md` | **每集** 开写前 |
+| 生成故事板提示词 | `references/storyboard-prompts.md`（Production Design Board 10 板块）+ `references/storyboard-spec.md` | **每张** 故事板 |
+| 生成 Seedance 视频提示词 | `references/seedance-guide.md` | **每段** 视频 |
+| Mode A 题材选择 | `references/genre-guide.md` | 创作方案开始时 |
+| Mode A 创作方案 | `references/rhythm-design.md` + `references/opening-hooks.md` + `references/conflict-design.md` | 写方案时 |
+| Mode C 小说改编 | `references/novel-adaptation.md` | 改编开始时 |
+| Mode E 方向重构 | `references/direction-dictionary.md` | 解析方向词时 |
+| 资产卡建 stub | `references/asset-detection.md` + `references/asset-card-template.md` | 检测到新实体时 |
+| 修改前合规审核 | `references/compliance-checklist.md` | 重要修改/发布前 |
+
+#### 强制流程（违反即简陋）
+
+```
+[用户触发某操作]
+       ↓
+[1. Read 对应必读 references]   ← 不能跳过，不能凭印象
+       ↓
+[2. 按模板 13 字段/10 板块 等填充]
+       ↓
+[3. 生成完成]
+       ↓
+[4. 对照模板自检：缺哪些字段？]   ← 不能省
+       ↓
+[5. 缺的字段标 TODO 或反问用户]
+       ↓
+[6. 写入 wiki]
+```
+
+#### 质量门槛（不达标必须标 TODO 或重写）
+
+| 内容类型 | 最低标准 | 缺失怎么办 |
+|---------|--------|---------|
+| 角色卡 | 13 个字段中**至少 8 个**有实质内容（不只填占位）| 缺的明确标 `TODO` |
+| 场景卡 | 含位置 + 视觉锚点 + 时段 + 灯光 4 段 | 缺的标 TODO |
+| 文学剧本 | ≥ 800 字 + 3-5 场次 + 2 个爽点/反转 + 结尾悬念 | 不足重写 |
+| 创作剧本分镜 | 每 beat 含 [画面] + [对白] + [技术备注] | 缺的补 |
+| 故事板提示词 | Production Design Board **完整 10 板块**（导演意图/角色/场景/机位/摄影/灯光/色彩/3分镜/Seedance适配/语言锁定）| 缺一项不能交付 |
+| Seedance 提示词 | 含主角描述 + 场景描述 + 分时段 4 段（如 15s 分 0-3/3-6/6-10/10-15）+ 音效 | 缺的补 |
+
+**真实案例**（不要重蹈覆辙）：
+- ❌ Susan 角色卡 38 行，只有 3 个字段（基础信息表+性格+功能）→ 不合格
+- ✅ 莉亚角色卡 50+ 行，含 13 字段表 + 弧线 + 关系网 → 合格
+
+#### 自检命令
+
+写完一批后跑：
+```bash
+~/.claude/skills/vibe-director/cli/vibe-director lint --json | jq '.items[] | select(.severity=="warn")'
+```
+
+会列出所有不达标的卡片。逐个修。
+
+---
+
 ### 双向链接硬规则（重要）
 
 **生成任何内容到 `01_资产/`、`02_故事/`、`03_视角/`、`04_剧本/` 时，提到已知实体的地方必须用 `[[实体名]]` 语法。**
