@@ -65,6 +65,87 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 读完后才回应用户。详细的冷启动协议见 **§十一**。
 意图识别（自然语言 → 动作）见 **§十一·B**。
 
+### 用户交互硬规则（重要）
+
+**任何需要用户从 2-4 个选项中选择的场景，必须用 `AskUserQuestion` 工具，禁止用文本菜单（"[A]...[B]..." 这种）。**
+
+#### 用 AskUserQuestion 的场景
+
+| 场景 | 不要这样写 | 要这样做 |
+|------|----------|---------|
+| 模式选择（A/B/C/D/E） | 文本列 5 个选项让用户输字母 | AskUserQuestion，options=5 个标签 |
+| 制作范围（剧本/+故事板/+视频）| 文本列"输 1/2/3" | AskUserQuestion，options=3 |
+| 草案确认（全部/部分/取消） | "[A] 全部 [B] 看 diff [C] 取消" | AskUserQuestion，4 options |
+| 视频生成参数确认 | "12s/1080p/16:9 对吗？" | AskUserQuestion: "确认提交？" options=[确认 / 改时长 / 改分辨率 / 取消] |
+| Stub 卡处理 | "[A] 先补 [B] LLM 即兴 [C] 直接出图" | AskUserQuestion，3 options |
+| 模糊指代（哪张图、哪个角色）| 让用户输字符串 | AskUserQuestion 列出候选 |
+| Version 切换/删除/解冻 | "输确认解冻 vX" | AskUserQuestion 二次确认 |
+
+#### **不要**用 AskUserQuestion 的场景
+
+| 场景 | 用什么 |
+|------|------|
+| 用户描述新场景/新剧情 | 自由文本输入 |
+| 用户起名（角色名/集名）| 自由文本输入 |
+| 单纯告知信息（不需要回复）| 普通文本输出 |
+| 多选场景的开放回答（如"还有什么要加吗"）| 自由文本（用户说"没了"为止）|
+
+#### AskUserQuestion 用法约定
+
+```typescript
+AskUserQuestion({
+  questions: [{
+    question: "你想做哪个范围的工作？",
+    header: "制作范围",          // 4-12 字短标签
+    options: [
+      { label: "只写剧本", description: "纯文字创作，无需 API" },
+      { label: "剧本 + 故事板", description: "需要图片生成 API" },
+      { label: "剧本 + 故事板 + 视频", description: "需要全套 API" }
+    ],
+    multiSelect: false
+  }]
+})
+```
+
+约束：
+- 单次最多 4 个问题（如必须问多个）
+- 单个问题最多 4 个 options
+- 推荐选项第一个标 "(推荐)"
+- label 简短（1-5 词）
+- description 解释选项含义/后果
+
+#### 关于本 SKILL.md 后续示例的约定
+
+后续章节中所有 `[A]...[B]...[C]...` 格式的对话示例都是**简写**，表示"这里有 N 个选项"。
+**实际实现时必须用 AskUserQuestion 工具**，不要直接复制文本菜单给用户。
+
+这样写是为了节省 SKILL.md 篇幅，但实际交互必须是按钮选择，不是字母输入。
+
+#### 例子转换
+
+❌ **错（旧式文本菜单）**：
+```
+我建好 stub 卡了。要现在补全详情吗？
+[A] 补全（agent 引导填字段 → 出参考图）
+[B] 先放着（status 保持 stub）
+[C] 撤销建卡（说明：哪个不需要建？）
+```
+
+✅ **对（AskUserQuestion）**：
+```
+[文本说明] 我建好 3 个 stub 卡了：露西·陈、废弃图书馆、古老药剂瓶。
+
+[AskUserQuestion]
+问题: "要现在补全这些 stub 卡的详情吗？"
+header: "处理 stub"
+options:
+- "补全详情" — agent 引导填字段并生成参考图（推荐）
+- "先放着" — 保持 stub，后续 lint 会提醒
+- "撤销建卡" — 删除这 N 个 stub，下次再判断
+```
+
+---
+
 ### CLI 加固（重要）
 
 skill 配套有一个 bash CLI（`~/.claude/skills/vibe-director/cli/vibe-director`），用于**确定性 + 高风险**的操作：
