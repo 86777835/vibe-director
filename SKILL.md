@@ -362,23 +362,43 @@ tos_sk: "your-sk"
 
 ### 1.3 视频生成 API（仅全流程需要）
 
-**提交视频生成任务**：
-```python
-payload = {
-    'model': vid_model,          # 如 'doubao-seedance-2-0-260128'
-    'prompt': seedance_prompt,
-    'metadata': {
-        # 参考模式：不设 role 字段，图片仅做视觉参考
-        'content': [{'type': 'image_url', 'image_url': {'url': image_url}}],
-        'resolution': '1080p',
-        'ratio': '16:9',
-        'duration': beat_duration,   # 8/10/12/15 秒
-    }
+**提交视频生成任务**（纯 bash）：
+```bash
+# 1. 提交任务 → 拿 task_id
+TASK_ID=$(curl -s -X POST "$VID_API" \
+  -H "Authorization: Bearer $VID_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d @- <<EOF | jq -r '.task_id'
+{
+  "model": "$VID_MODEL",
+  "prompt": "$SEEDANCE_PROMPT",
+  "metadata": {
+    "content": [{"type": "image_url", "image_url": {"url": "$IMAGE_URL"}}],
+    "resolution": "1080p",
+    "ratio": "16:9",
+    "duration": $BEAT_DURATION
+  }
 }
-# POST → vid_api
-# 轮询 → GET vid_api/{task_id}
-# 下载 → 保存到 04_剧本/02_创作剧本/第N集/videos/
+EOF
+)
+
+# 2. 轮询任务状态（每 10s）
+while true; do
+  STATUS=$(curl -s "$VID_API/$TASK_ID" -H "Authorization: Bearer $VID_API_KEY" | jq -r '.status')
+  case "$STATUS" in
+    success)   VIDEO_URL=$(curl -s "$VID_API/$TASK_ID" -H "Authorization: Bearer $VID_API_KEY" | jq -r '.video_url'); break ;;
+    failed)    echo "视频生成失败"; exit 1 ;;
+    *)         sleep 10 ;;
+  esac
+done
+
+# 3. 下载到 04_剧本/02_创作剧本/第N集/videos/
+curl -sL "$VIDEO_URL" -o "04_剧本/02_创作剧本/第${N}集/videos/${BEAT_NAME}.mp4"
 ```
+
+要点：
+- `metadata.content` 不设 `role` 字段 = 参考模式（推荐，首帧不会硬抄故事板）
+- 设 `"role": "first_frame"` 会让首帧就是故事板（不推荐）
 
 **重要参数说明**：
 - `metadata.duration`：视频时长（秒），最长 15 秒。**必须放在 metadata 里**，顶层会被忽略
@@ -390,12 +410,69 @@ payload = {
 
 视频生成需要故事板图片的公开 URL。如果 Wiki 中图片只有本地路径，需上传到对象存储：
 
-```python
-import tos
-client = tos.TosClientV2(ak=tos_ak, sk=tos_sk, endpoint=tos_endpoint, region=tos_region)
-client.put_object_from_file(tos_bucket, tos_key, local_image_path)
-# 公开 URL: https://{tos_bucket}.{tos_endpoint}/{tos_key}
+```bash
+# 火山引擎 TOS S3 兼容协议上传 — 纯 bash + curl + openssl（S3 Signature V4）
+upload_to_tos() {
+  local file="$1"           # 本地文件路径
+  local key="$2"            # TOS object key（如 storyboards/S01E01_SB01.png）
+
+  local host="${TOS_BUCKET}.${TOS_ENDPOINT}"
+  local content_type
+  content_type=$(file -b --mime-type "$file")
+  local date_stamp=$(date -u +%Y%m%d)
+  local amz_date=$(date -u +%Y%m%dT%H%M%SZ)
+  local payload_hash=$(openssl dgst -sha256 -hex < "$file" | awk '{print $2}')
+
+  # Canonical request
+  local canonical_req="PUT
+/${key}
+
+host:${host}
+x-amz-content-sha256:${payload_hash}
+x-amz-date:${amz_date}
+
+host;x-amz-content-sha256;x-amz-date
+${payload_hash}"
+
+  local canonical_hash=$(printf '%s' "$canonical_req" | openssl dgst -sha256 -hex | awk '{print $2}')
+  local credential_scope="${date_stamp}/${TOS_REGION}/tos/request"
+
+  # String to sign
+  local string_to_sign="TOS4-HMAC-SHA256
+${amz_date}
+${credential_scope}
+${canonical_hash}"
+
+  # Derive signing key
+  local k_date=$(printf '%s' "$date_stamp" | openssl dgst -sha256 -hmac "TOS4${TOS_SK}" -hex | awk '{print $2}')
+  local k_region=$(printf '%s' "$TOS_REGION" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$k_date" -hex | awk '{print $2}')
+  local k_service=$(printf '%s' "tos" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$k_region" -hex | awk '{print $2}')
+  local k_signing=$(printf '%s' "request" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$k_service" -hex | awk '{print $2}')
+  local signature=$(printf '%s' "$string_to_sign" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$k_signing" -hex | awk '{print $2}')
+
+  # Authorization
+  local auth="TOS4-HMAC-SHA256 Credential=${TOS_AK}/${credential_scope}, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=${signature}"
+
+  curl -s -X PUT "https://${host}/${key}" \
+    -H "Host: ${host}" \
+    -H "Authorization: ${auth}" \
+    -H "x-amz-date: ${amz_date}" \
+    -H "x-amz-content-sha256: ${payload_hash}" \
+    -H "Content-Type: ${content_type}" \
+    --data-binary "@${file}"
+
+  echo "https://${host}/${key}"   # 返回公开 URL
+}
+
+# 用法
+PUBLIC_URL=$(upload_to_tos "/path/to/storyboard.png" "storyboards/S01E01_SB01.png")
 ```
+
+**说明**：
+- 完全纯 bash，依赖 `curl` + `openssl`（macOS/Linux 自带）
+- 实现 S3 V4 签名（TOS 兼容此协议）
+- 30 行核心代码，可放在 `cli/lib/tos-upload.sh` 复用
+- 如果嫌麻烦，agent 也可以用 `aws s3 cp --endpoint-url ...`（要装 awscli）
 
 ### 1.5 首帧裁剪
 
@@ -1084,16 +1161,24 @@ curl --request POST \
 
 **Step 5: 解析响应并保存**
 
-```python
-import json, base64
-with open('/tmp/sb_response.json') as f:
-    d = json.load(f)
-image_data = d['data'][0].get('url') or d['data'][0].get('b64_json')
-if image_data.startswith('http'):
-    # 下载 URL
-elif image_data:
-    # 解码 base64
-# 保存到: 04_剧本/02_创作剧本/第N集_标题/scenes/S{季}E{集}_SB{编号}_P{beat}_{描述}.png
+```bash
+# 解析响应（纯 bash + jq）
+SAVE_PATH="04_剧本/02_创作剧本/第${N}集_${TITLE}/scenes/S${S}E${EP}_SB${SB}_P${BEAT}_${DESC}.png"
+
+# 试 URL 模式
+IMAGE_URL=$(jq -r '.data[0].url // empty' /tmp/sb_response.json)
+if [[ -n "$IMAGE_URL" ]]; then
+  curl -sL "$IMAGE_URL" -o "$SAVE_PATH"
+else
+  # base64 模式
+  B64=$(jq -r '.data[0].b64_json // empty' /tmp/sb_response.json)
+  if [[ -n "$B64" ]]; then
+    echo "$B64" | base64 -d > "$SAVE_PATH"
+  else
+    echo "响应中无 url 也无 b64_json" >&2
+    exit 1
+  fi
+fi
 ```
 
 **Step 6: 质量检查**
@@ -2115,19 +2200,31 @@ wiki/_sandbox/
 
 用户说 `/执行` 后，agent 对所有累积草案做**统一**影响扫描：
 
-```python
-# 伪代码
-for each draft in pending_changes:
-    affected_files = []
-    # 1. Grep 全 wiki 找实体引用
-    affected_files += Grep(draft.entity_keywords)
-    # 2. 查 manifest 找受影响故事板
-    affected_files += GrepManifests(draft.target_asset)
-    # 3. 查 log.md 找已生成视频
-    affected_files += GrepLog(draft.target_asset, type="video_generated")
+**流程**（agent 用 Bash 工具逐步执行）：
 
-# 合并去重，分类
-risks = classify_risks(affected_files)  # 🔴🟡🟢
+```
+对 _pending_changes.md 中每个草案：
+  1. Grep wiki/ 找该草案目标实体的所有引用 → 记入"受影响文件"
+  2. Grep manifest.md depends_on 字段，找到引用该资产的所有故事板 → 加入"受影响"
+  3. Grep log.md 找已生成视频涉及的资产 → 加入"受影响"
+
+汇总所有受影响文件，按规则分类风险：
+  🔴 高：续集冲突 / 世界观自洽破坏 / POV 泄漏
+  🟡 中：关系网破坏 / 视觉资产需重生 / 机制依赖
+  🟢 低：纯文本替换 / 单点修订
+```
+
+具体 grep 命令：
+
+```bash
+# 1. 实体引用
+grep -rn "草案目标实体名" "$WIKI_ROOT" --include="*.md"
+
+# 2. 受影响故事板
+grep -rln "depends_on.*草案目标实体" "$WIKI_ROOT/04_剧本/02_创作剧本" --include="manifest.md"
+
+# 3. 已生成视频
+grep -n "video_generated.*草案目标实体" "$WIKI_ROOT/log.md"
 ```
 
 #### 风险三色等级
