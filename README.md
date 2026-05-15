@@ -244,40 +244,57 @@ VibeDirector 流程：**口述脑海中的场景 → agent 自动完成所有中
 
 ## 3. 安装
 
-### Step 1: 准备 Claude Code 环境
+### 一键安装（推荐）
 
-如果还没装 Claude Code：
 ```bash
-# 参考 Claude Code 官方安装文档
-brew install claude  # 或其他方式
+curl -fsSL https://raw.githubusercontent.com/86777835/vibe-director/main/install.sh | bash
 ```
 
-### Step 2: 把 skill 放到 Claude 的 skills 目录
+这条命令会：
+1. 检查环境（macOS/Linux、bash、git/curl）
+2. clone 仓库到 `~/.claude/skills/vibe-director/`
+3. 安装 CLI 软链到 `~/.local/bin/vibe-director`
+4. 显示后续步骤
+
+**升级**：再跑一次同样的命令——脚本自动检测并 `git pull`。
+
+### 手动安装
+
+如果不想用 curl：
 
 ```bash
-mkdir -p ~/.claude/skills/
-cp -R /path/to/vibe-director ~/.claude/skills/vibe-director
-
-# 安装 CLI（推荐）
+git clone https://github.com/86777835/vibe-director.git ~/.claude/skills/vibe-director
 bash ~/.claude/skills/vibe-director/cli/install.sh
-# 这会把 vibe-director 命令软链到 ~/.local/bin/
-# 如果 ~/.local/bin 不在 PATH，按提示加到 .zshrc
 ```
 
-CLI 是可选的，但**强烈建议安装**——它强制执行硬规则（.frozen 拒写）+ 加速 fork（30 文件 5 秒搞定）+ 加速 lint 等。详见下面的 §13。
+### 前置条件
 
-确认安装成功：
+- **Claude Code**（必需）：参考 https://docs.claude.com/claude-code
+- **bash 3.0+**（macOS 自带，Linux 自带）
+- **git 或 curl**（任一即可）
+
+### 验证
+
 ```bash
-ls ~/.claude/skills/vibe-director/
-# 应该看到：
-# SKILL.md  README.md  references/
+ls ~/.claude/skills/vibe-director/      # 应该看到 SKILL.md / README.md / cli/ / references/
+~/.claude/skills/vibe-director/cli/vibe-director version    # 应输出 0.1.0
 ```
 
-### Step 3: 重启 Claude Code
+### 启用 skill
 
-Skill 需要 Claude Code **重启**才能被识别。重启后，输入 `/help` 应该能看到 skill 列表里有 `vibe-director`。
+Skill 需要 Claude Code **重启**才能被识别。重启后输入 `/help` 应该能看到 skill 列表里有 `vibe-director`。
 
-也可以让当前会话**直接加载**（不重启）：让 agent 读取 `~/.claude/skills/vibe-director/SKILL.md`。但**正式使用建议重启**，让 skill 真正进入 skill registry。
+也可以让当前会话**直接加载**（不重启）：让 agent 读取 `~/.claude/skills/vibe-director/SKILL.md`。
+
+### PATH 配置（让 CLI 可全局调用）
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+vibe-director version   # 现在可以直接调
+```
+
+如果不想改 PATH，用绝对路径也行：`~/.claude/skills/vibe-director/cli/vibe-director`
 
 ---
 

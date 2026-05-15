@@ -26,19 +26,12 @@ ln -s "$CLI_PATH" "$LINK_PATH"
 chmod +x "$CLI_PATH"
 chmod +x "$(dirname "$CLI_PATH")/lib/"*.sh
 
-echo "✓ 安装完成"
-echo ""
-echo "现在你可以运行:"
-echo "  vibe-director version"
-echo ""
-
-# 检查 PATH
-if ! echo "$PATH" | tr ':' '\n' | grep -Fxq "$BIN_DIR"; then
-  echo "⚠ $BIN_DIR 不在 PATH 中"
-  echo ""
-  echo "把这行加到 ~/.zshrc 或 ~/.bashrc:"
-  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-  echo ""
-  echo "或者用绝对路径调用 CLI:"
-  echo "  ~/.claude/skills/vibe-director/cli/vibe-director version"
+# 静默成功（顶层 install.sh 负责终端提示）
+# 若直接调用本脚本（非顶层），输出简短提示
+if [[ -z "${VIBE_INSTALLER_PARENT:-}" ]]; then
+  echo "✓ CLI 安装完成: $LINK_PATH"
+  if ! echo "$PATH" | tr ':' '\n' | grep -Fxq "$BIN_DIR"; then
+    echo "  ⚠ $BIN_DIR 不在 PATH。把这行加到 shell rc:"
+    echo "      export PATH=\"\$HOME/.local/bin:\$PATH\""
+  fi
 fi
