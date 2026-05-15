@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# vibe-director CLI — 短剧 wiki 操作工具
+# 用法: vibe-director <command> [args]
+
+set -euo pipefail
+
+# 定位 CLI 安装目录（处理 symlink）
+CLI_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")" && pwd)"
+LIB_DIR="$CLI_DIR/lib"
+
+VERSION="0.1.0"
+
+usage() {
+  cat <<EOF
+vibe-director $VERSION — 短剧 wiki 操作 CLI
+
+用法:
+  vibe-director <command> [args]
+
+命令:
+  check-frozen <path>       检查路径是否在 frozen 版本下（exit 1 = 拒绝写入）
+  lint [--json]             Wiki 健康检查（9 项）
+  scan <file>               扫描文件中的新实体，建议 stub 卡
+  fork <args>               Fork 当前 wiki 到新版本（应用 patches）
+  help                      显示此帮助
+  version                   显示版本
+
+示例:
+  vibe-director check-frozen wiki/01_资产/01_角色/艾拉拉.md
+  vibe-director lint
+  vibe-director lint --json
+  vibe-director scan wiki/04_剧本/01_文学剧本/第21集.md
+  vibe-director fork --patches tone-darken --to v2.0a-dark
+
+环境变量:
+  VIBE_WIKI_ROOT    Wiki 根目录（默认: 当前目录下找 wiki/ 或 wikis/）
+
+详细文档: https://github.com/86777835/vibe-director
+EOF
+}
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 0
+fi
+
+CMD="$1"
+shift
+
+case "$CMD" in
+  check-frozen)
+    bash "$LIB_DIR/check-frozen.sh" "$@"
+    ;;
+  lint)
+    bash "$LIB_DIR/lint.sh" "$@"
+    ;;
+  scan)
+    bash "$LIB_DIR/scan.sh" "$@"
+    ;;
+  fork)
+    bash "$LIB_DIR/fork.sh" "$@"
+    ;;
+  version|--version|-v)
+    echo "vibe-director $VERSION"
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    echo "错误: 未知命令 '$CMD'" >&2
+    echo "运行 'vibe-director help' 查看可用命令" >&2
+    exit 2
+    ;;
+esac

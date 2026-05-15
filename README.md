@@ -19,6 +19,7 @@
 - [10. 命令速查](#10-命令速查)
 - [11. 常见问题](#11-常见问题)
 - [12. 进阶](#12-进阶)
+- [13. CLI（可选但推荐）](#13-cli可选但推荐) ⚙️
 
 ---
 
@@ -256,7 +257,14 @@ brew install claude  # 或其他方式
 ```bash
 mkdir -p ~/.claude/skills/
 cp -R /path/to/vibe-director ~/.claude/skills/vibe-director
+
+# 安装 CLI（推荐）
+bash ~/.claude/skills/vibe-director/cli/install.sh
+# 这会把 vibe-director 命令软链到 ~/.local/bin/
+# 如果 ~/.local/bin 不在 PATH，按提示加到 .zshrc
 ```
+
+CLI 是可选的，但**强烈建议安装**——它强制执行硬规则（.frozen 拒写）+ 加速 fork（30 文件 5 秒搞定）+ 加速 lint 等。详见下面的 §13。
 
 确认安装成功：
 ```bash
@@ -1040,6 +1048,70 @@ cd ~/Documents/new-drama
 2. 或用 git：`git reset --hard HEAD~1`（如果 commit 过）
 
 Skill 自己不做版本控制，强烈建议 **wiki 进 git**，每个里程碑提交一次。
+
+---
+
+## 13. CLI（可选但推荐）
+
+skill 配套有一个 bash CLI（`cli/vibe-director`），把"确定性 + 高风险"的操作交给代码，agent 只做"创意 + 决策"。
+
+### 4 个命令
+
+| 命令 | 用途 | 何时被调用 |
+|------|------|----------|
+| `vibe-director check-frozen <path>` | 检查路径是否在冻结版本下 | Agent 每次 Edit/Write 前 |
+| `vibe-director fork --to <name> --patches <list>` | 复制 wiki + 加 .frozen + 写 patches 待办 | 用户说"试试 X 版" |
+| `vibe-director scan <file>` | 统计文件中已知实体 + [[]] 引用 + 候选新名 | Agent 写完剧本后 |
+| `vibe-director lint [--json]` | 9 项 wiki 健康检查 | 周期检查 / 用户问"现状" |
+
+### 为什么 CLI 比纯 markdown 规则好
+
+**例 1：Frozen 拒写**
+- 没 CLI：靠 agent 看 SKILL.md 自觉。一不小心 LLM 忘了就违反。
+- 有 CLI：`check-frozen` 是代码，exit 1 = 强拒。agent 必须看到错误。
+
+**例 2：Fork 速度**
+- 没 CLI：agent 一个个 Read → 推理 → Edit 30+ 文件，2-5 分钟。
+- 有 CLI：一次 `cp -R` + 写 .frozen + 写 _patches_applied.md，5 秒。
+
+**例 3：Lint 一致性**
+- 没 CLI：agent 跑 lint 每次结果可能略不同（LLM 非确定性）。
+- 有 CLI：9 项检查是代码，相同 wiki 永远相同报告。
+
+### 安装
+
+```bash
+bash ~/.claude/skills/vibe-director/cli/install.sh
+# 软链到 ~/.local/bin/vibe-director
+# 加 ~/.local/bin 到 PATH（如还没）
+```
+
+### Agent 怎么调
+
+Agent 通过 Bash 工具调：
+
+```bash
+~/.claude/skills/vibe-director/cli/vibe-director check-frozen ./wiki/index.md
+~/.claude/skills/vibe-director/cli/vibe-director lint --json
+~/.claude/skills/vibe-director/cli/vibe-director scan wiki/04_剧本/01_文学剧本/第21集.md
+~/.claude/skills/vibe-director/cli/vibe-director fork --to v2.0a-dark --patches tone-darken
+```
+
+### 退出码
+
+| 退出码 | 含义 | Agent 应如何反应 |
+|-------|------|--------------|
+| 0 | 成功 / 全通过 | 继续 |
+| 1 | 警告 / 冻结拒写 | 停止并告知用户 |
+| 2 | 错误 / 无效输入 | 报错给用户，让用户修 |
+
+### 设计原则
+
+- **CLI 做机械执行**：文件操作、模板填充、检查、统计
+- **Agent 做创意/决策**：解读意图、写剧本、出图、提供修改方案
+- **CLI 失败不可绕过**：agent 看到 exit 1 必须停，不能自己 Edit 强写
+
+详细 CLI 实现见 `cli/lib/*.sh`。
 
 ---
 

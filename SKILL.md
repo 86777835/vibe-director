@@ -58,11 +58,35 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 ```
 1. $PWD/CLAUDE.md            ← 项目级使命/目标（若存在）
 2. $PWD/wiki/index.md        ← 整剧世界模型（路径+8-15字摘要）
+                                （多版本时是 $PWD/wikis/current/index.md）
 3. $PWD/wiki/preferences.md  ← 用户风格偏好
 ```
 
 读完后才回应用户。详细的冷启动协议见 **§十一**。
 意图识别（自然语言 → 动作）见 **§十一·B**。
+
+### CLI 加固（重要）
+
+skill 配套有一个 bash CLI（`~/.claude/skills/vibe-director/cli/vibe-director`），用于**确定性 + 高风险**的操作：
+
+| CLI 命令 | 用途 | 何时调 |
+|---------|------|--------|
+| `vibe-director check-frozen <path>` | 检查路径是否在冻结版本下 | **任何 Edit/Write 前必调**（exit 1 = 拒写）|
+| `vibe-director fork --to <name> --patches <list>` | 复制 wiki + 加 .frozen + 写待应用 patches | 用户说"试试 X 版本"时 |
+| `vibe-director scan <file>` | 统计文件中的已知实体 + [[]] 引用 + X·Y 候选名 | 写完剧本后 |
+| `vibe-director lint [--json]` | 9 项 wiki 健康检查 | 用户问 "现状怎样" / 周期检查 |
+
+**调用方式**：
+```bash
+PATH="$HOME/.claude/skills/vibe-director/cli:$PATH" vibe-director <cmd> [args]
+# 或直接绝对路径
+~/.claude/skills/vibe-director/cli/vibe-director <cmd> [args]
+```
+
+**重要原则**：
+- CLI 做**机械执行**（复制、检查、统计、模板填充）
+- Agent 做**创意/决策**（解读意图、解读修改方案、写剧本、出图）
+- CLI 失败时（exit ≠ 0）→ agent 不要绕过，而是把错误展示给用户
 
 ---
 
@@ -607,6 +631,22 @@ agent：[解析方向]
 
 ### E.2 Fork 启动
 
+**强制调 CLI**：
+```bash
+~/.claude/skills/vibe-director/cli/vibe-director fork \
+  --to v2.0a-dark \
+  --patches tone-darken,protagonist-gender-swap
+```
+
+CLI 负责机械操作：
+- 首次 fork 自动迁移 `wiki/` → `wikis/v1.0_<date>/`
+- 复制源到目标
+- 给源加 `.frozen`
+- 给目标写 `_patches_applied.md`（待应用 patches 列表）
+- 更新 `wikis/current` 指针
+
+CLI **不应用 patches 内容**——那是 agent 的事（通过 §十三.2 修改类草案流程，把 _patches_applied.md 里的每个 patch 应用到 active wiki）。
+
 第一次 `/重构` 时，agent 自动迁移目录结构：
 
 ```
@@ -715,13 +755,18 @@ agent 读 frontmatter → 知道对应关系，**无需重新扫文件**。
 
 **任何路径包含 `.frozen` 祖先目录的文件，Edit/Write 操作必须立刻拒绝。**
 
+**强制实现方式**：用 CLI 检查，不靠 agent 自觉。
+
+```bash
+# 每次 Edit/Write 前调
+~/.claude/skills/vibe-director/cli/vibe-director check-frozen <target_path>
+# exit 0 → 可写
+# exit 1 → 拒写（agent 必须停止并告诉用户）
+# exit 2 → 错误（路径无效）
 ```
-检查算法（每次 Edit/Write 前）：
-1. 取目标路径
-2. 逐级向上找父目录
-3. 若任一父目录含 .frozen 文件 → 拒绝
-4. 报错文案："{version} 已冻结。修改请切换 active 版本，或 /解冻 {version}（慎用）。"
-```
+
+报错文案模板：
+> "{version} 已冻结（marker: {marker}）。修改请切换 active 版本，或 /解冻 {version}（慎用）。"
 
 ### F.2 单 Active 指针
 
@@ -1378,19 +1423,25 @@ Wiki 根目录的 `log.md` 是一个 **append-only**（追加式）操作日志�
 | **批量盘点** | 用户说 "盘点" / `/盘点` | 全 wiki grep 专有名词 vs index，列 dangling refs |
 | **被动 lint** | `/lint` 定期跑 | 列 dangling references + 按 status 分组 |
 
-### X.2 检测算法（伪代码）
+### X.2 检测算法（CLI + agent 配合）
 
+**Step 1 — CLI 做机械扫描**：
+```bash
+~/.claude/skills/vibe-director/cli/vibe-director scan <file> --json
 ```
-For each new text (剧本/素材):
-  entities = LLM_extract_named_entities(text)
-  for e in entities:
-    if e not in index.md:
-      if e.mention_count >= 2 OR e.is_key_scene/key_prop:
-        type = classify(e)  # 角色 / 场景 / 道具
-        create_stub_card(type, e)
-        append_to_index(e)
-        notify_user(e)
-```
+
+CLI 输出：
+- `known_entities_present`：文件中已知实体出现统计
+- `existing_wikilinks`：文件中的 `[[xxx]]` 引用
+- `candidate_new`：X·Y 命名模式的候选（CLI 无法判断意图，只能给候选）
+
+**Step 2 — Agent 做语义判断**：
+基于 CLI 输出 + LLM 推理，决定：
+- 候选哪些是真实体（排除歧义/无意义重复）
+- 是否达到阈值（出现 ≥ 2 次 或 1 次但情节关键）
+- 类型分类（角色 / 场景 / 道具）
+
+**Step 3 — Agent 调用工具建 stub 卡** + 更新 index.md
 
 详细阈值判断见 [asset-detection.md §阈值判断](references/asset-detection.md)。
 
@@ -1531,6 +1582,20 @@ Cinematic establishing shot of [地点英文描述], [建筑风格], [天气/时
 ---
 
 ## 十、Wiki 健康检查（/lint）
+
+**实现方式**：调 CLI（9 项确定性检查由代码完成）。
+
+```bash
+~/.claude/skills/vibe-director/cli/vibe-director lint            # 人类可读
+~/.claude/skills/vibe-director/cli/vibe-director lint --json     # JSON for agent
+```
+
+退出码：0 全通过 / 1 有警告 / 2 有错误
+
+Agent 拿到结果后做的事：
+1. 把 errors 和高优先级 warnings 总结给用户
+2. 对每条问题给出修复建议
+3. 用户确认后用对应工具（Edit / fork / 重生故事板）修
 
 定期执行 Wiki 一致性检查。灵感来自 Karpathy LLM Wiki 的 lint 操作——保证 Wiki 作为持久产物的质量。
 
