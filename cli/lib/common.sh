@@ -105,6 +105,49 @@ get_fm_field() {
   '
 }
 
+# 从文件末尾的 ## 元数据 markdown 表格提取字段值
+# 适用：资产卡（角色/场景/道具）
+# 表格格式：
+#   ## 元数据
+#   | 字段 | 值 |
+#   |------|---|
+#   | status | with-image |
+#   | 别名 | Leah Scott |
+# 用法: get_meta_field <file> <field>
+get_meta_field() {
+  local file="$1"
+  local field="$2"
+  awk -v key="$field" '
+    /^## *元数据/ { in_meta=1; next }
+    in_meta && /^## / { exit }                      # 下一个 h2 节，结束
+    in_meta && /^\| *[^|]+ *\| *[^|]+ *\|/ {
+      # 解析 |  field  |  value  |
+      n = split($0, parts, "|")
+      if (n >= 4) {
+        k = parts[2]; v = parts[3]
+        gsub(/^ +| +$/, "", k)
+        gsub(/^ +| +$/, "", v)
+        gsub(/^`|`$/, "", v)                        # 去掉值两侧的 `
+        if (k == key) { print v; exit }
+      }
+    }
+  ' "$file"
+}
+
+# 兼容入口：先试末尾 ## 元数据 表，再试顶部 frontmatter
+# 用法: get_field <file> <field>
+get_field() {
+  local file="$1"
+  local field="$2"
+  local val
+  val=$(get_meta_field "$file" "$field")
+  if [[ -n "$val" ]]; then
+    echo "$val"
+  else
+    get_fm_field "$file" "$field"
+  fi
+}
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 输出辅助
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -67,37 +67,62 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 
 ### Frontmatter 节制规则（重要）
 
-**只在机器需要的文件加 YAML frontmatter，叙事内容文件不要加。**
+**两条铁律**：
+1. **纯叙事 / 导航文件不要任何元数据**（让人专注内容）
+2. **资产卡需要元数据时，放文件末尾 `## 元数据` 表格**（不是顶部 frontmatter）
+3. **机器专用文件**（manifest / _patches_applied / api-config / .frozen）保持顶部 frontmatter（人不读）
 
-Frontmatter 在 Obsidian 里渲染为"笔记属性"面板，会污染纯叙事内容的阅读体验。
+Obsidian 渲染顶部 frontmatter 为"笔记属性"面板。把这个面板从叙事内容里移除，读者第一眼看到的是标题和故事本身。
 
-#### 必须加 frontmatter 的文件
+#### 文件类型与元数据位置
 
-| 文件 | 必备字段 | 用途 |
-|------|--------|------|
-| `01_资产/01_角色/*.md` | `status: stub/partial/complete/with-image` | `/lint` 检查 |
-| `01_资产/02_场景/*.md` | 同上 | 同上 |
-| `01_资产/03_道具/*.md` | 同上 | 同上 |
-| `_patches_applied.md` | `forked_from`, `patches` 列表 | CLI 状态机 |
-| `manifest.md` | `episode`, `version` | manifest 解析 |
-| `.frozen` 标记文件 | `frozen_at`, `forked_to` | 冻结状态 |
-| `api-config.md` | `img_api_*`, `vid_api_*`, `tos_*` | API 配置读取 |
+| 文件类型 | 元数据位置 | 格式 |
+|---------|---------|------|
+| 资产卡（`01_资产/*/*.md`）| **末尾** | `## 元数据` markdown 表格 |
+| `manifest.md` / `_patches_applied.md` | 顶部 | YAML frontmatter |
+| `api-config.md` / `.frozen` | 顶部 | YAML frontmatter |
+| 文学剧本 / 创作剧本 | **无** | 不加 |
+| 世界观 / 时间线 / 身份 / 机制 / 传说 | **无** | 不加 |
+| POV设定 / 观众已知 / 分集目录 | **无** | 不加 |
+| 创作方案 / index / 导航 / log / preferences | **无** | 不加 |
 
-#### **禁止**加 frontmatter 的文件（纯叙事 / 导航）
+#### 资产卡的"末尾元数据"格式
 
-| 文件 | 原因 |
-|------|------|
-| `04_剧本/01_文学剧本/第N集_*.md` | 剧本是给人读的，episode/title 已在文件名里 |
-| `02_故事/世界观.md` | 叙事内容 |
-| `02_故事/完整时间线.md` | 叙事内容 |
-| `02_故事/01_身份/*.md` `02_机制/*.md` `03_传说/*.md` | 叙事 / 设定 |
-| `03_视角/POV设定.md` `第N集_观众已知.md` | 叙事 |
-| `04_剧本/分集目录.md` | 导航 |
-| `创作方案.md` | 叙事 |
-| `index.md` | Agent 索引，用路径表（不是 frontmatter） |
-| `导航.md` | 给人看的导航 |
-| `log.md` | append-only 日志 |
-| `preferences.md` | 已用 markdown 章节结构 |
+```markdown
+# 莉亚（Leah）
+
+[内容主体 — 基本信息表 / 外貌 / 性格 / 关系 / 等等]
+
+...
+
+---
+
+## 元数据
+
+| 字段 | 值 |
+|------|---|
+| status | with-image |
+| 首次出场 | 第 1 集 |
+| 提及次数 | 23 |
+| 别名 | Leah Scott |
+| 参考图 | `images/leah.png` |
+```
+
+**好处**：
+- 读者看文件从标题开始，最后才看到元数据（如有需要）
+- Obsidian 不渲染为顶部"笔记属性"面板
+- CLI 仍能机器解析（`grep + awk` 表格行）
+- 表格本身也是人类可读
+
+#### 字段约定（资产卡 ## 元数据 表）
+
+| 字段 | 必须？ | 取值 |
+|------|------|------|
+| `status` | ✅ | `stub` / `partial` / `complete` / `with-image` |
+| 首次出场 | 可选 | `第N集 P0X` |
+| 提及次数 | 可选 | 数字 |
+| 别名 | 可选 | 逗号分隔字符串 |
+| 参考图 | 可选 | 相对路径 |
 
 #### 版本化与跨版本引用怎么办？
 
@@ -112,7 +137,6 @@ Wiki 2.0 fork 后想跟踪 "这文件来自哪个 v1.0"——**不要**在每个
 ---
 episode: 1
 title: 婚礼前夕的背叛
-status: complete
 characters: [Leah, Zara]
 ---
 
@@ -120,7 +144,7 @@ characters: [Leah, Zara]
 ...
 ```
 
-✅ **对（剧本就是 markdown 内容）**：
+✅ **对（剧本纯内容）**：
 ```markdown
 # 第 1 集：婚礼前夕的背叛
 
@@ -128,7 +152,7 @@ characters: [Leah, Zara]
 [[Leah]] 撞见 [[Leo]] 和 [[Shirley]] 亲热...
 ```
 
-✅ **对（角色卡需要 status frontmatter）**：
+❌ **错（角色卡 frontmatter 在顶部）**：
 ```markdown
 ---
 status: with-image
@@ -136,9 +160,23 @@ aliases: [Leah Scott]
 ---
 
 # 莉亚（Leah）
-
-## 基本信息
 ...
+```
+
+✅ **对（角色卡元数据在末尾）**：
+```markdown
+# 莉亚（Leah）
+
+[完整角色档案内容...]
+
+---
+
+## 元数据
+
+| 字段 | 值 |
+|------|---|
+| status | with-image |
+| 别名 | Leah Scott |
 ```
 
 ---

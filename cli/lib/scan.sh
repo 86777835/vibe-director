@@ -67,7 +67,9 @@ trap "rm -f $ALIASES_FILE" EXIT
 while IFS= read -r asset; do
   [[ -z "$asset" ]] && continue
   local_name=$(basename "$asset" .md)
-  aliases_line=$(get_fm_field "$asset" "aliases" 2>/dev/null || echo "")
+  aliases_line=$(get_field "$asset" "别名" 2>/dev/null || echo "")
+  # 兼容：旧的 frontmatter 也可能用 aliases 字段
+  [[ -z "$aliases_line" ]] && aliases_line=$(get_fm_field "$asset" "aliases" 2>/dev/null || echo "")
   if [[ -n "$aliases_line" ]]; then
     cleaned=$(echo "$aliases_line" | tr -d '[]' | tr ',' '\n')
     while IFS= read -r alias; do

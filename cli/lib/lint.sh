@@ -257,7 +257,7 @@ check_stub_cards() {
   while IFS= read -r card; do
     [[ -z "$card" ]] && continue
     local status
-    status=$(get_fm_field "$card" "status" 2>/dev/null || echo "")
+    status=$(get_field "$card" "status" 2>/dev/null || echo "")
     case "$status" in
       stub) stub=$((stub+1)) ;;
       partial) partial=$((partial+1)) ;;
