@@ -65,6 +65,84 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
 读完后才回应用户。详细的冷启动协议见 **§十一**。
 意图识别（自然语言 → 动作）见 **§十一·B**。
 
+### Frontmatter 节制规则（重要）
+
+**只在机器需要的文件加 YAML frontmatter，叙事内容文件不要加。**
+
+Frontmatter 在 Obsidian 里渲染为"笔记属性"面板，会污染纯叙事内容的阅读体验。
+
+#### 必须加 frontmatter 的文件
+
+| 文件 | 必备字段 | 用途 |
+|------|--------|------|
+| `01_资产/01_角色/*.md` | `status: stub/partial/complete/with-image` | `/lint` 检查 |
+| `01_资产/02_场景/*.md` | 同上 | 同上 |
+| `01_资产/03_道具/*.md` | 同上 | 同上 |
+| `_patches_applied.md` | `forked_from`, `patches` 列表 | CLI 状态机 |
+| `manifest.md` | `episode`, `version` | manifest 解析 |
+| `.frozen` 标记文件 | `frozen_at`, `forked_to` | 冻结状态 |
+| `api-config.md` | `img_api_*`, `vid_api_*`, `tos_*` | API 配置读取 |
+
+#### **禁止**加 frontmatter 的文件（纯叙事 / 导航）
+
+| 文件 | 原因 |
+|------|------|
+| `04_剧本/01_文学剧本/第N集_*.md` | 剧本是给人读的，episode/title 已在文件名里 |
+| `02_故事/世界观.md` | 叙事内容 |
+| `02_故事/完整时间线.md` | 叙事内容 |
+| `02_故事/01_身份/*.md` `02_机制/*.md` `03_传说/*.md` | 叙事 / 设定 |
+| `03_视角/POV设定.md` `第N集_观众已知.md` | 叙事 |
+| `04_剧本/分集目录.md` | 导航 |
+| `创作方案.md` | 叙事 |
+| `index.md` | Agent 索引，用路径表（不是 frontmatter） |
+| `导航.md` | 给人看的导航 |
+| `log.md` | append-only 日志 |
+| `preferences.md` | 已用 markdown 章节结构 |
+
+#### 版本化与跨版本引用怎么办？
+
+Wiki 2.0 fork 后想跟踪 "这文件来自哪个 v1.0"——**不要**在每个文件加 `forked_from`。统一在版本目录的 `_patches_applied.md` 里记录（fork 命令自动生成）。
+
+如果某个具体文件相对 v1.0 有大改，用页面顶部的 `## Δ from v1.0` 块（markdown 内容）记录，不用 frontmatter。
+
+#### 例子
+
+❌ **错（剧本不该有 frontmatter）**：
+```markdown
+---
+episode: 1
+title: 婚礼前夕的背叛
+status: complete
+characters: [Leah, Zara]
+---
+
+# 第 1 集：婚礼前夕的背叛
+...
+```
+
+✅ **对（剧本就是 markdown 内容）**：
+```markdown
+# 第 1 集：婚礼前夕的背叛
+
+## 剧情梗概
+[[Leah]] 撞见 [[Leo]] 和 [[Shirley]] 亲热...
+```
+
+✅ **对（角色卡需要 status frontmatter）**：
+```markdown
+---
+status: with-image
+aliases: [Leah Scott]
+---
+
+# 莉亚（Leah）
+
+## 基本信息
+...
+```
+
+---
+
 ### 双向链接硬规则（重要）
 
 **生成任何内容到 `01_资产/`、`02_故事/`、`03_视角/`、`04_剧本/` 时，提到已知实体的地方必须用 `[[实体名]]` 语法。**
